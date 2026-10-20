@@ -5,6 +5,7 @@ on:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+  workflow_dispatch: # Omogućava ručno pokretanje (idealno za demo produkcije)
 
 permissions:
   id-token: write
@@ -88,6 +89,8 @@ jobs:
   deploy-prod:
     name: "Deploy on prod"
     needs: deploy-staging
+    # Produkcija se pokreće ručno (workflow_dispatch) uz obaveznu potvrdu drugog člana tima
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment: prod
     steps:
