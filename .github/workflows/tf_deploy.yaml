@@ -5,6 +5,7 @@ on:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+  workflow_dispatch:
 
 permissions:
   id-token: write
@@ -101,6 +102,7 @@ jobs:
   deploy-prod:
     name: "Deploy on prod"
     needs: "deploy-staging"
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment: prod
     steps:
