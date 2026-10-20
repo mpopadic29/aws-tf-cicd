@@ -11,6 +11,6 @@ variable "repository_name" {
 }
 
 variable "aws_region" {
-  type        = string
-  default     = "eu-central-1"
+  type    = string
+  default = "eu-central-1"
 }
