@@ -11,7 +11,8 @@ permissions:
   contents: read
   pull-requests: write
 
-lint-test:
+jobs:
+  lint-test:
     name: "lint and test"
     runs-on: ubuntu-latest
     steps:
@@ -28,10 +29,7 @@ lint-test:
         run: |
           for env in dev stag prod; do
             echo "Validating environment: $env"
-            cd environments/$env
-            terraform init -backend=false
-            terraform validate
-            cd - > /dev/null
+            (cd environments/$env && terraform init -backend=false && terraform validate)
           done
 
   deploy-dev:
