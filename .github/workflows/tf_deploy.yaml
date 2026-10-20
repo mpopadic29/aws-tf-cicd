@@ -1,0 +1,115 @@
+name: deploy
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch: # Omogućava ručno pokretanje (idealno za demo produkcije)
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+jobs:
+  lint-test:
+    name: "lint and test"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+
+      - name: Terraform Validate All Environments
+        run: |
+          for env in dev stag prod; do
+            echo "Validating environment: $env"
+            (cd environments/$env && terraform init -backend=false && terraform validate)
+          done
+
+  deploy-dev:
+    name: "Deploy on dev"
+    needs: "lint-test"
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: eu-central-1
+          mask-aws-account-id: 'true'  
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3  
+        with:
+          terraform_version: "1.6.0"
+
+      - name: Terraform apply
+        run: |
+          cd environments/dev
+          terraform init
+          terraform apply -auto-approve
+
+  deploy-staging:
+    name: "Deploy on staging"
+    needs: deploy-dev
+    runs-on: ubuntu-latest
+    environment: stag
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: eu-central-1
+          mask-aws-account-id: 'true'  
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3  
+        with:
+          terraform_version: "1.6.0"
+
+      - name: Terraform Apply
+        run: |
+          cd environments/stag
+          terraform init
+          terraform apply -auto-approve
+
+  deploy-prod:
+    name: "Deploy on prod"
+    needs: deploy-staging
+    # Produkcija se pokreće ručno (workflow_dispatch) uz obaveznu potvrdu drugog člana tima
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: prod
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: eu-central-1
+          mask-aws-account-id: 'true'  
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3  
+        with:
+          terraform_version: "1.6.0"
+
+      - name: Terraform Apply
+        run: |
+          cd environments/prod
+          terraform init
+          terraform apply -auto-approve
