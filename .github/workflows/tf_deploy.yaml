@@ -29,25 +29,28 @@ jobs:
         run: terraform fmt -check -recursive
 
       - name: Terraform Init Dev
-        run: terraform -chdir=environments/dev init -backend=false
-        env:
-          TF_DISABLE_PROVIDER_VERIFICATION: "1"
+        run: |
+          cd environments/dev
+          find . -name "*.tf" -exec sed -i '/version.*=/d' {} +
+          terraform init -backend=false
 
       - name: Terraform Validate Dev
         run: terraform -chdir=environments/dev validate
 
       - name: Terraform Init Staging
-        run: terraform -chdir=environments/stag init -backend=false
-        env:
-          TF_DISABLE_PROVIDER_VERIFICATION: "1"
+        run: |
+          cd environments/stag
+          find . -name "*.tf" -exec sed -i '/version.*=/d' {} +
+          terraform init -backend=false
 
       - name: Terraform Validate Staging
         run: terraform -chdir=environments/stag validate
 
       - name: Terraform Init Prod
-        run: terraform -chdir=environments/prod init -backend=false
-        env:
-          TF_DISABLE_PROVIDER_VERIFICATION: "1"
+        run: |
+          cd environments/prod
+          find . -name "*.tf" -exec sed -i '/version.*=/d' {} +
+          terraform init -backend=false
 
       - name: Terraform Validate Prod
         run: terraform -chdir=environments/prod validate
