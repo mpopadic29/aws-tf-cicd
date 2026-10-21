@@ -101,8 +101,9 @@ jobs:
   deploy-prod:
     name: "Deploy on prod"
     needs: "deploy-staging"
-    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    environment:
+      name: prod
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
