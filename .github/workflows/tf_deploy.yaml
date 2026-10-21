@@ -31,7 +31,8 @@ jobs:
       - name: Terraform Init Dev
         run: |
           cd environments/dev
-          find . -name "*.tf" -exec sed -i '/version.*=/d' {} +
+          rm -f .terraform.lock.hcl
+          sed -i '/provider "aws"/,$d' main.tf
           terraform init -backend=false
 
       - name: Terraform Validate Dev
@@ -40,7 +41,8 @@ jobs:
       - name: Terraform Init Staging
         run: |
           cd environments/stag
-          find . -name "*.tf" -exec sed -i '/version.*=/d' {} +
+          rm -f .terraform.lock.hcl
+          sed -i '/provider "aws"/,$d' main.tf
           terraform init -backend=false
 
       - name: Terraform Validate Staging
@@ -49,7 +51,8 @@ jobs:
       - name: Terraform Init Prod
         run: |
           cd environments/prod
-          find . -name "*.tf" -exec sed -i '/version.*=/d' {} +
+          rm -f .terraform.lock.hcl
+          sed -i '/provider "aws"/,$d' main.tf
           terraform init -backend=false
 
       - name: Terraform Validate Prod
