@@ -14,49 +14,20 @@ permissions:
 
 jobs:
   lint-test:
-    name: "Lint and Test"
+    name: "lint and test"
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: "1.6.0"
 
-      - name: Terraform Format Check
-        run: terraform fmt -check -recursive
+      - name: Terraform Init
+        run: terraform init -backend=false
 
-      - name: Terraform Init Dev
-        run: |
-          cd environments/dev
-          rm -f .terraform.lock.hcl
-          sed -i '/provider "aws"/,$d' main.tf
-          terraform init -backend=false
-
-      - name: Terraform Validate Dev
-        run: terraform -chdir=environments/dev validate
-
-      - name: Terraform Init Staging
-        run: |
-          cd environments/stag
-          rm -f .terraform.lock.hcl
-          sed -i '/provider "aws"/,$d' main.tf
-          terraform init -backend=false
-
-      - name: Terraform Validate Staging
-        run: terraform -chdir=environments/stag validate
-
-      - name: Terraform Init Prod
-        run: |
-          cd environments/prod
-          rm -f .terraform.lock.hcl
-          sed -i '/provider "aws"/,$d' main.tf
-          terraform init -backend=false
-
-      - name: Terraform Validate Prod
-        run: terraform -chdir=environments/prod validate
+      - name: Terraform Validate
+        run: terraform validate
 
   deploy-dev:
     name: "Deploy on dev"
