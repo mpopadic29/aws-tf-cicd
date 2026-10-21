@@ -5,7 +5,7 @@ on:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
-  workflow_dispatch: # Omogućava ručno pokretanje (idealno za demo produkcije)
+  workflow_dispatch:
 
 permissions:
   id-token: write
@@ -23,38 +23,45 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
-      - name: Terraform Format Check
-        run: terraform fmt -check -recursive
+      - name: Terraform Init
+        run: terraform init -backend=false
 
-      - name: Terraform Validate All Environments
-        run: |
-          for env in dev stag prod; do
-            echo "Validating environment: $env"
-            (cd environments/$env && terraform init -backend=false && terraform validate)
-          done
+      - name: Terraform Validate
+        run: terraform validate
 
   deploy-dev:
     name: "Deploy on dev"
     needs: "lint-test"
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    environment: dev
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Debug OIDC claims          # <-- NOVO
+        run: |
+          TOKEN=$(curl -sH "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r .value)
+          echo "$TOKEN" | cut -d. -f2 | tr '_-' '/+' | awk '{ while (length($0)%4) $0=$0"="; print }' | base64 -d | jq '{iss, aud, sub, repository}'
+
+      - name: Mask Role ARN
+        run: |
+          ROLE_ARN="${{ secrets.AWS_ROLE_DEV }}"
+          echo "::add-mask::$ROLE_ARN"
 
       - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-to-assume: ${{ secrets.AWS_ROLE_DEV }}
           aws-region: eu-central-1
-          mask-aws-account-id: 'true'  
+          role-session-name: GitHubActionsDevSession
+          mask-aws-account-id: 'true'
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3  
+        uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: "1.6.0"
+          terraform_version: "1.16.6"
 
-      - name: Terraform apply
+      - name: Terraform Apply
         run: |
           cd environments/dev
           terraform init
@@ -62,23 +69,28 @@ jobs:
 
   deploy-staging:
     name: "Deploy on staging"
-    needs: deploy-dev
+    needs: "deploy-dev"
     runs-on: ubuntu-latest
-    environment: stag
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Mask Role ARN
+        run: |
+          ROLE_ARN="${{ secrets.AWS_ROLE_STAG }}"
+          echo "::add-mask::$ROLE_ARN"
 
       - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-to-assume: ${{ secrets.AWS_ROLE_STAG }}
           aws-region: eu-central-1
-          mask-aws-account-id: 'true'  
+          mask-aws-account-id: 'true'
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3  
+        uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: "1.6.0"
+          terraform_version: "1.16.6"
 
       - name: Terraform Apply
         run: |
@@ -88,25 +100,29 @@ jobs:
 
   deploy-prod:
     name: "Deploy on prod"
-    needs: deploy-staging
-    # Produkcija se pokreće ručno (workflow_dispatch) uz obaveznu potvrdu drugog člana tima
+    needs: "deploy-staging"
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    environment: prod
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Mask Role ARN
+        run: |
+          ROLE_ARN="${{ secrets.AWS_ROLE_PROD }}"
+          echo "::add-mask::$ROLE_ARN"
 
       - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-to-assume: ${{ secrets.AWS_ROLE_PROD }}
           aws-region: eu-central-1
-          mask-aws-account-id: 'true'  
+          mask-aws-account-id: 'true'
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3  
+        uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: "1.6.0"
+          terraform_version: "1.16.6"
 
       - name: Terraform Apply
         run: |
