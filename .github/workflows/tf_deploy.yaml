@@ -33,7 +33,6 @@ jobs:
     name: "Deploy on dev"
     needs: "lint-test"
     runs-on: ubuntu-latest
-    environment: dev
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -65,7 +64,6 @@ jobs:
     name: "Deploy on staging"
     needs: "deploy-dev"
     runs-on: ubuntu-latest
-    environment: stag
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -98,7 +96,6 @@ jobs:
     needs: "deploy-staging"
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    environment: prod
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
