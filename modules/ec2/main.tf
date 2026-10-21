@@ -3,13 +3,34 @@ variable "environment" {
 }
 
 variable "ami_id" {
-  type    = string
-  default = "ami-092cce4a19b438926" # Amazon Linux 2023 u eu-north-1
+  type        = string
+  default     = null
+  description = "Opcionalno. Ako nije zadat, koristi se najnoviji Amazon Linux 2023 u regiji."
 }
 
 variable "instance_type" {
   type    = string
   default = "t3.micro"
+}
+
+data "aws_ami" "al2023" {
+  most_recent = true
+  owners      = ["amazon"]
+
+  filter {
+    name   = "name"
+    values = ["al2023-ami-2023.*-x86_64"]
+  }
+
+  filter {
+    name   = "architecture"
+    values = ["x86_64"]
+  }
+
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
 }
 
 resource "aws_iam_role" "ec2_role" {
@@ -35,7 +56,7 @@ resource "aws_iam_instance_profile" "ec2_profile" {
 }
 
 resource "aws_instance" "app_server" {
-  ami                  = var.ami_id
+  ami                  = coalesce(var.ami_id, data.aws_ami.al2023.id)
   instance_type        = var.instance_type
   iam_instance_profile = aws_iam_instance_profile.ec2_profile.name
 
