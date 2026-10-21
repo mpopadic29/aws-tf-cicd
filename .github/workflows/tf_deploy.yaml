@@ -32,7 +32,7 @@ jobs:
         run: |
           for env in dev stag prod; do
             echo "Validating environment: $env"
-            (cd environments/$env && terraform init -backend=false -get=false && terraform validate)
+            (cd environments/$env && terraform init -backend=false && terraform validate)
           done
 
   deploy-dev:
