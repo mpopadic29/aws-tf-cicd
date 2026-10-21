@@ -28,11 +28,14 @@ jobs:
       - name: Terraform Format Check
         run: terraform fmt -check -recursive
 
-      - name: Terraform Validate All Environments
+      - name: Terraform Init and Validate
         run: |
-          for env in dev stag prod; do
-            echo "Validating environment: $env"
-            (cd environments/$env && terraform init -backend=false && terraform validate)
+          for env in dev staging prod; do
+            echo "Validating $env"
+            cd environments/$env
+            terraform init -backend=false
+            terraform validate
+            cd ../..
           done
 
   deploy-dev:
