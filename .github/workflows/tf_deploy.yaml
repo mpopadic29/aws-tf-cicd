@@ -29,19 +29,19 @@ jobs:
         run: terraform fmt -check -recursive
 
       - name: Terraform Init Dev
-        run: terraform -chdir=environments/dev init -backend=false
+        run: terraform -chdir=environments/dev init -backend=false -get=false
 
       - name: Terraform Validate Dev
         run: terraform -chdir=environments/dev validate
 
       - name: Terraform Init Staging
-        run: terraform -chdir=environments/stag init -backend=false
+        run: terraform -chdir=environments/stag init -backend=false -get=false
 
       - name: Terraform Validate Staging
         run: terraform -chdir=environments/stag validate
 
       - name: Terraform Init Prod
-        run: terraform -chdir=environments/prod init -backend=false
+        run: terraform -chdir=environments/prod init -backend=false -get=false
 
       - name: Terraform Validate Prod
         run: terraform -chdir=environments/prod validate
