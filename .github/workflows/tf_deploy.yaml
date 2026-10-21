@@ -48,7 +48,6 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_DEV }}
           aws-region: eu-central-1
           mask-aws-account-id: 'true'
-          aws-debug-log: true
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
