@@ -47,6 +47,7 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_DEV }}
           aws-region: eu-central-1
+          role-session-name: GitHubActionsDevSession
           mask-aws-account-id: 'true'
 
       - name: Setup Terraform
