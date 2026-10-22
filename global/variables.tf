@@ -15,12 +15,12 @@ variable "aws_region" {
   default = "eu-central-1"
 }
 
-variable "github_org_id"  { 
-  type = string
-  default = "344829492" 
+variable "github_org_id" {
+  type    = string
+  default = "344829492"
 }
 
-variable "repository_id"  {
-  type = string 
-  default = "1425670943" 
+variable "repository_id" {
+  type    = string
+  default = "1425670943"
 }
