@@ -11,6 +11,15 @@ resource "aws_s3_bucket" "tf_state" {
   }
 }
 
+# Versioning za state bucket (omogućava povrat starog state-a)
+resource "aws_s3_bucket_versioning" "tf_state" {
+  bucket = aws_s3_bucket.tf_state.id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
 # DynamoDB tabela za Terraform state locking
 resource "aws_dynamodb_table" "tf_locks" {
   name         = "terraform-lock-table"
@@ -49,11 +58,8 @@ resource "aws_iam_role" "github_actions_env" {
           StringEquals = {
             "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
           }
-        StringLike = {
-            "token.actions.githubusercontent.com:sub" = [
-            "repo:${var.github_org}@${var.github_org_id}/${var.repository_name}@${var.repository_id}:environment:${each.key}",
-            "repo:${var.github_org}/${var.repository_name}:environment:${each.key}",
-            ]
+          StringLike = {
+            "token.actions.githubusercontent.com:sub" = "repo:${var.github_org}@${var.github_org_id}/${var.repository_name}@${var.repository_id}:environment:${each.key}"
           }
         }
       }
