@@ -64,7 +64,7 @@ resource "aws_iam_role" "github_actions_env" {
               ["${local.sub_prefix}:environment:${each.key}"],
               each.key == "prod" ? ["${local.sub_prefix}:environment:prod-plan"] : []
             )
-          }        
+          }
         }
       }
     ]
