@@ -65,6 +65,9 @@ resource "aws_instance" "app_server" {
     Environment = var.environment
     ManagedBy   = "Terraform"
   }
+  lifecycle {
+    ignore_changes = [ami]
+  }
 }
 
 output "instance_id" {

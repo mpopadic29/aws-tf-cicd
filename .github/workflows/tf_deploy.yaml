@@ -3,16 +3,23 @@ name: deploy
 on:
   push:
     branches: [ "main" ]
+    paths-ignore:
+      - '**.md'
   pull_request:
     branches: [ "main" ]
-  workflow_dispatch:
 
+# Least privilege by default. Jobs that talk to AWS add id-token: write themselves.
 permissions:
-  id-token: write
   contents: read
-  pull-requests: write
+
+env:
+  TF_VERSION: "1.16.6"        # keep identical to `terraform version` locally
+  AWS_REGION: eu-central-1
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # Runs on pull requests and on pushes. Never touches AWS.
+  # ---------------------------------------------------------------------------
   lint-test:
     name: "lint and test"
     runs-on: ubuntu-latest
@@ -22,113 +29,214 @@ jobs:
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
 
-      - name: Terraform Init
-        run: terraform init -backend=false
+      - name: Format check
+        run: terraform fmt -check -recursive
 
-      - name: Terraform Validate
-        run: terraform validate
+      - name: Validate every root module
+        run: |
+          for dir in global environments/dev environments/stag environments/prod; do
+            echo "::group::validate $dir"
+            terraform -chdir="$dir" init -backend=false -input=false
+            terraform -chdir="$dir" validate
+            echo "::endgroup::"
+          done
 
+  # ---------------------------------------------------------------------------
+  # Deploy jobs run ONLY after a merge to main. Pull requests never deploy.
+  # Plan and apply happen in the same job, so the plan that is applied is the
+  # plan that was just printed in the job summary.
+  # ---------------------------------------------------------------------------
   deploy-dev:
     name: "Deploy on dev"
-    needs: "lint-test"
+    needs: lint-test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: dev
+    permissions:
+      id-token: write
+      contents: read
+    defaults:
+      run:
+        working-directory: environments/dev
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
-
-      - name: Debug OIDC claims          # <-- NOVO
-        run: |
-          TOKEN=$(curl -sH "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r .value)
-          echo "$TOKEN" | cut -d. -f2 | tr '_-' '/+' | awk '{ while (length($0)%4) $0=$0"="; print }' | base64 -d | jq '{iss, aud, sub, repository}'
-
-      - name: Mask Role ARN
-        run: |
-          ROLE_ARN="${{ secrets.AWS_ROLE_DEV }}"
-          echo "::add-mask::$ROLE_ARN"
 
       - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_DEV }}
-          aws-region: eu-central-1
+          aws-region: ${{ env.AWS_REGION }}
           role-session-name: GitHubActionsDevSession
           mask-aws-account-id: 'true'
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: "1.16.6"
+          terraform_version: ${{ env.TF_VERSION }}
 
-      - name: Terraform Apply
+      - name: Terraform Init
+        run: terraform init -input=false
+
+      - name: Terraform Plan
+        run: terraform plan -input=false -out=tfplan
+
+      - name: Show plan in job summary
         run: |
-          cd environments/dev
-          terraform init
-          terraform apply -auto-approve
+          {
+            echo "### Terraform plan: dev"
+            echo '```'
+            terraform show -no-color tfplan
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Terraform Apply (saved plan)
+        run: terraform apply -input=false tfplan
 
   deploy-staging:
     name: "Deploy on staging"
-    needs: "deploy-dev"
+    needs: deploy-dev
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: stag
+    permissions:
+      id-token: write
+      contents: read
+    defaults:
+      run:
+        working-directory: environments/stag
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
-
-      - name: Mask Role ARN
-        run: |
-          ROLE_ARN="${{ secrets.AWS_ROLE_STAG }}"
-          echo "::add-mask::$ROLE_ARN"
 
       - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_STAG }}
-          aws-region: eu-central-1
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: GitHubActionsStagSession
           mask-aws-account-id: 'true'
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: "1.16.6"
+          terraform_version: ${{ env.TF_VERSION }}
 
-      - name: Terraform Apply
+      - name: Terraform Init
+        run: terraform init -input=false
+
+      - name: Terraform Plan
+        run: terraform plan -input=false -out=tfplan
+
+      - name: Show plan in job summary
         run: |
-          cd environments/stag
-          terraform init
-          terraform apply -auto-approve
+          {
+            echo "### Terraform plan: stag"
+            echo '```'
+            terraform show -no-color tfplan
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
-  deploy-prod:
-    name: "Deploy on prod"
-    needs: "deploy-staging"
+      - name: Terraform Apply (saved plan)
+        run: terraform apply -input=false tfplan
+
+  # ---------------------------------------------------------------------------
+  # Prod: plan first (changes nothing, no approval needed), then a reviewer
+  # approves on the `prod` environment, then exactly that plan is applied.
+  # ---------------------------------------------------------------------------
+  plan-prod:
+    name: "Plan prod"
+    needs: deploy-staging
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    environment:
-      name: prod
+    environment: prod-plan          # no reviewers on this environment
+    permissions:
+      id-token: write
+      contents: read
+    defaults:
+      run:
+        working-directory: environments/prod
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
-
-      - name: Mask Role ARN
-        run: |
-          ROLE_ARN="${{ secrets.AWS_ROLE_PROD }}"
-          echo "::add-mask::$ROLE_ARN"
 
       - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_PROD }}
-          aws-region: eu-central-1
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: GitHubActionsProdPlanSession
           mask-aws-account-id: 'true'
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: "1.16.6"
+          terraform_version: ${{ env.TF_VERSION }}
 
-      - name: Terraform Apply
+      - name: Terraform Init
+        run: terraform init -input=false
+
+      - name: Terraform Plan
+        run: terraform plan -input=false -out=tfplan
+
+      - name: Show plan in job summary
         run: |
-          cd environments/prod
-          terraform init
-          terraform apply -auto-approve
+          {
+            echo "### Terraform plan: prod (review before approving)"
+            echo '```'
+            terraform show -no-color tfplan
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-prod
+          path: environments/prod/tfplan
+          retention-days: 1
+          if-no-files-found: error
+
+  deploy-prod:
+    name: "Deploy on prod"
+    needs: plan-prod
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment:
+      name: prod                    # required reviewers live here
+    permissions:
+      id-token: write
+      contents: read
+    defaults:
+      run:
+        working-directory: environments/prod
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_PROD }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: GitHubActionsProdSession
+          mask-aws-account-id: 'true'
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        run: terraform init -input=false
+
+      - name: Download reviewed plan
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan-prod
+          path: environments/prod
+
+      - name: Terraform Apply (reviewed plan)
+        run: terraform apply -input=false tfplan

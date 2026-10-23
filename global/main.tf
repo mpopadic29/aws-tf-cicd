@@ -1,5 +1,6 @@
 locals {
   environments = ["dev", "stag", "prod"]
+  sub_prefix   = "repo:${var.github_org}@${var.github_org_id}/${var.repository_name}@${var.repository_id}"
 }
 
 # S3 bucket za čuvanje Terraform state-a
@@ -59,8 +60,11 @@ resource "aws_iam_role" "github_actions_env" {
             "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
           }
           StringLike = {
-            "token.actions.githubusercontent.com:sub" = "repo:${var.github_org}@${var.github_org_id}/${var.repository_name}@${var.repository_id}:environment:${each.key}"
-          }
+            "token.actions.githubusercontent.com:sub" = concat(
+              ["${local.sub_prefix}:environment:${each.key}"],
+              each.key == "prod" ? ["${local.sub_prefix}:environment:prod-plan"] : []
+            )
+          }        
         }
       }
     ]
