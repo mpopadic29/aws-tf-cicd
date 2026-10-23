@@ -1,109 +1,47 @@
 # aws-tf-cicd
 
-Infrastructure as Code on AWS with a CI/CD pipeline in GitHub Actions. Terraform provisions three isolated environments (`dev`, `stag`, `prod`), and the pipeline authenticates to AWS with **OIDC**, so there are no long-lived access keys anywhere.
+Terraform on AWS with a GitHub Actions pipeline. It manages three environments (dev, stag, prod) and deploys them without any stored AWS keys, using GitHub OIDC.
 
-## Architecture
+## How it works
 
-```
- Pull request ──► lint & validate (fmt, validate for all environments)
-                        │
- Merge to main ─────────┤
-                        ▼
-                  deploy dev ──► deploy stag ──► deploy prod
-                                                    ▲
-                                          manual approval required
-```
+- **Pull request:** formatting check and `terraform validate` for every environment. Nothing is deployed.
+- **Merge to main:** deploys dev, then stag, then plans prod.
+- **Prod:** the plan is saved and shown in the job summary. A reviewer has to approve it manually, and then exactly that plan is applied.
 
-Each deploy job:
+Each deploy job gets a short-lived token from GitHub and assumes the IAM role of its environment. Every role only trusts its own GitHub environment, so the dev job can't touch prod.
 
-1. Requests a short-lived OIDC token from GitHub
-2. Assumes that environment's IAM role in AWS (`sts:AssumeRoleWithWebIdentity`)
-3. Runs `terraform init` and `terraform apply` against remote state
+## What it creates
 
-## What gets created
+Per environment: an EC2 instance (latest Amazon Linux 2023, with an IAM role) and an encrypted S3 bucket for logs.
 
-Per environment:
+Shared, in `global/`: the S3 bucket for Terraform state (versioned, locking with S3 lock files), the GitHub OIDC provider, and one IAM role per environment.
 
-- **EC2 instance** with an IAM role and instance profile. The AMI is resolved automatically (latest Amazon Linux 2023 in the active region), so no hardcoded AMI IDs.
-- **S3 bucket** for logs, encrypted and with public access blocked.
-
-Shared, created once in `global/`:
-
-- S3 bucket for Terraform state (versioning enabled)
-- DynamoDB table for state locking
-- GitHub OIDC identity provider
-- One IAM role per environment, assumable only by that environment's jobs
-
-Region: `eu-central-1`.
-
-## Repository layout
+## Structure
 
 ```
-.
-├── .github/workflows/tf_deploy.yaml   # CI/CD pipeline
-├── environments/{dev,stag,prod}/      # one root module per environment, separate state
-├── modules/
-│   ├── ec2/                           # EC2 + IAM role + instance profile
-│   └── s3/                            # logs bucket
-└── global/                            # bootstrap: state backend, OIDC provider, deploy roles
+.github/workflows/tf_deploy.yaml   pipeline
+environments/dev|stag|prod/        one root module per environment
+modules/ec2, modules/s3            shared modules
+global/                            state bucket, OIDC provider, deploy roles
 ```
-
-## Security design
-
-- **No static credentials.** Authentication is OIDC with short-lived tokens.
-- **One role per environment.** The trust policy of each role is bound to the repository and to a GitHub Environment, so the `dev` job cannot assume the `prod` role.
-- **Trust policy** (example for dev):
-  `repo:<owner>@<owner_id>/<repo>@<repo_id>:environment:dev`
-  This repo uses GitHub's immutable subject claims (numeric owner and repo IDs), which also protects against repository rename or takeover.
-- **Approval gate on prod.** The `prod` environment requires a reviewer before the job can start, and the role can only be assumed from that environment.
-- **Protected `main`.** Changes require a pull request and at least one approving review.
-- **Remote state** in S3 with versioning (rollback) and DynamoDB locking (no concurrent applies).
-- `global/` is applied manually with admin credentials, never through the pipeline, so deploy roles cannot modify their own permissions.
 
 ## Setup
 
-1. **Bootstrap** (once, local credentials):
-   ```bash
-   cd global
-   terraform init && terraform apply
-   ```
-   The output `aws_role_arns` lists the role ARN for each environment.
-2. **GitHub repository secrets:** store the role ARN for each environment.
-3. **GitHub Environments:** `dev`, `stag`, `prod`. Add *Required reviewers* to `prod`.
-4. **Branch protection** on `main`: require a pull request and one approval.
+1. Run once, locally: `cd global && terraform init && terraform apply`. The output lists the role ARNs.
+2. Add repository variables `AWS_ROLE_DEV`, `AWS_ROLE_STAG`, `AWS_ROLE_PROD` with those ARNs.
+3. Create the GitHub environments `dev`, `stag`, `prod` and `prod-plan`. Limit them to the `main` branch and add a required reviewer to `prod`.
+4. Protect `main`: pull request and one approval required.
 
-The workflow needs:
+## Problems I ran into
 
-```yaml
-permissions:
-  id-token: write
-  contents: read
-```
+- **OIDC role assume failed.** The token's `sub` claim contains numeric IDs and the environment name, so my trust policy didn't match. I printed the token claims and fixed the policy.
+- **Provider install failed (`key expired`).** Terraform 1.6.0 was too old, so I upgraded.
+- **AMI not found.** I had hardcoded an AMI from another region. It is now looked up, and the instance ignores later AMI updates so prod isn't rebuilt by itself.
+- **Pull requests were deploying.** Deploy jobs now run only on push to `main`.
 
-Each deploy job declares `environment: <name>`. That is what puts `environment:<name>` into the OIDC token and makes the trust policy match.
+## Not done yet
 
-## Local usage
-
-```bash
-cd environments/dev
-terraform init
-terraform plan
-terraform fmt -recursive   # CI rejects unformatted code
-```
-
-Use the same Terraform version as pinned in the workflow. Never commit `*.tfstate` or `.terraform/`; do commit `.terraform.lock.hcl`.
-
-## Lessons learned
-
-| Problem | Cause | Fix |
-|---|---|---|
-| `Not authorized to perform sts:AssumeRoleWithWebIdentity` | OIDC `sub` claim did not match the trust policy (immutable claims include numeric IDs; the claim also changes with `environment:`) | Print the token claims in a debug step, then match the trust policy to the real `sub` |
-| `openpgp: key expired` on `terraform init` | Terraform 1.6.0 rejects expired provider signing keys | Upgrade Terraform (pinned to the local version) |
-| `InvalidAMIID.NotFound` | AMI ID was hardcoded for another region | Look up the AMI with a data source |
-
-## Known limitations and next steps
-
-- Deploy roles use `AdministratorAccess` for simplicity. The next step is a least-privilege policy scoped to EC2, S3, and the specific IAM actions needed.
-- Add a Terraform version constraint (`required_version`) in the code.
-- Consider S3 native state locking (Terraform 1.10+) in place of DynamoDB.
-
+- The deploy roles have `AdministratorAccess` and should be scoped down.
+- One state bucket is shared by all environments. I would split prod from non-prod.
+- EC2 hardening: IMDSv2, encrypted root volume, a security group.
+- Run a plan on pull requests.

@@ -8,11 +8,11 @@ terraform {
   required_version = ">= 1.5.0"
 
   backend "s3" {
-    bucket         = "mpopadic-tf-state-bucket"
-    key            = "environments/dev/terraform.tfstate"
-    region         = "eu-central-1"
-    dynamodb_table = "terraform-lock-table"
-    encrypt        = true
+    bucket       = "mpopadic-tf-state-bucket"
+    key          = "environments/dev/terraform.tfstate"
+    region       = "eu-central-1"
+    use_lockfile = true
+    encrypt      = true
   }
 }
 

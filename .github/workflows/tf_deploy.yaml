@@ -68,7 +68,7 @@ jobs:
       - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_DEV }}
+          role-to-assume: ${{ vars.AWS_ROLE_DEV }}
           aws-region: ${{ env.AWS_REGION }}
           role-session-name: GitHubActionsDevSession
           mask-aws-account-id: 'true'
@@ -115,7 +115,7 @@ jobs:
       - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_STAG }}
+          role-to-assume: ${{ vars.AWS_ROLE_STAG }}
           aws-region: ${{ env.AWS_REGION }}
           role-session-name: GitHubActionsStagSession
           mask-aws-account-id: 'true'
@@ -166,7 +166,7 @@ jobs:
       - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_PROD }}
+          role-to-assume: ${{ vars.AWS_ROLE_PROD }}
           aws-region: ${{ env.AWS_REGION }}
           role-session-name: GitHubActionsProdPlanSession
           mask-aws-account-id: 'true'
@@ -219,7 +219,7 @@ jobs:
       - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_PROD }}
+          role-to-assume: ${{ vars.AWS_ROLE_PROD }}
           aws-region: ${{ env.AWS_REGION }}
           role-session-name: GitHubActionsProdSession
           mask-aws-account-id: 'true'
