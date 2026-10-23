@@ -3,6 +3,10 @@ locals {
   sub_prefix   = "repo:${var.github_org}@${var.github_org_id}/${var.repository_name}@${var.repository_id}"
 }
 
+provider "aws" {
+  region = var.aws_region
+}
+
 # S3 bucket za čuvanje Terraform state-a
 resource "aws_s3_bucket" "tf_state" {
   bucket = "mpopadic-tf-state-bucket"
